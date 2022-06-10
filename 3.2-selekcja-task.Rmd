@@ -1,0 +1,301 @@
+---
+title: "Selekcja cech dla modeli liniowych"
+date: "Semestr letni 2021/22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+library(MASS)
+library(ISLR)
+library(leaps)
+```
+
+## Selekcja cech dla modeli liniowych
+
+```{r na.omit}
+credits <- read.csv(file = 'credits.csv')
+```
+Metody selekcji cech są zaimplementowane
+w funkcji `regsubsets()` z pakietu `leaps`.
+
+### Wybór najepszego podzbioru
+
+```{r na.omit}
+credits_linear <- credits[-15]
+```
+
+```{r bestSubsets1}
+
+credits_bs <- regsubsets(Credit.Score ~ ., data = credits_linear, nvmax=13)
+credits_bs_sum <- summary(credits_bs)
+credits_bs_sum
+```
+
+Obiekt zwracany przez funkcję `summary.regsubsets()` zawiera informacje umożliwiające
+zidentyfikowanie globalnie najlepszego pozdbioru cech, np. miarę $C_p$.
+```{r cp}
+credits_bs_sum$cp
+```
+
+Najlepszy podzbiór według kryterium BIC
+```{r bestBIC}
+bic_min <- which.min(credits_bs_sum$bic)
+bic_min
+credits_bs_sum$bic[bic_min]
+```
+
+Stosowny obrazek
+```{r bestBICPlot}
+plot(credits_bs_sum$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(bic_min, credits_bs_sum$bic[bic_min], col = "red", pch = 9)
+```
+
+Dostępny jest też specjalny rodzaj wykresu (`?plot.regsubsets`).
+```{r regsubsetsPlot}
+plot(credits_bs, scale = "bic")
+```
+
+Estymaty współczynników dla optymalnego podzbioru
+```{r bestSubsetCoef}
+coef(credits_bs, id = 4)
+```
+
+```{r multiRegression}
+fit_la <- lm(Credit.Score ~ Current.Loan.Amount + Years.of.Credit.History + Number.of.Credit.Problems + Maximum.Open.Credit, data = credits)
+summary(fit_la)
+```
+Metoda najlepszych podzbiorow dostalismy ze model najlepiej sobie radzi kiedy przekazemy mu 4 kategorie uzywajac cryterium BIC, widzimi na podsumowaniu regresji liniowej ze rzeczywiscie te parametry sa istotne w predykcji Credi Scoru.
+```{r lmDiagnosticPlots}
+plot(fit_la)
+```
+
+### Klasyfikacja 
+
+```{r na.omit}
+credits_classification <- credits[-2]
+credits_classification
+```
+
+```{r bestSubsets1}
+
+credits_class_bs <- regsubsets(as.integer(credits$Loan.Given == 'True') ~ ., data = credits_classification)
+credits_class_bs_sum <- summary(credits_class_bs)
+credits_class_bs_sum
+```
+
+```{r cp}
+credits_class_bs_sum$cp
+```
+
+Najlepszy podzbiór według kryterium BIC
+```{r bestBIC}
+bic_min <- which.min(credits_class_bs_sum$bic)
+bic_min
+credits_class_bs_sum$bic[bic_min]
+```
+
+Stosowny obrazek
+```{r bestBICPlot}
+plot(credits_class_bs_sum$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(bic_min, credits_class_bs_sum$bic[bic_min], col = "red", pch = 9)
+```
+Dostępny jest też specjalny rodzaj wykresu (`?plot.regsubsets`).
+```{r regsubsetsPlot}
+plot(credits_class_bs, scale = "bic")
+```
+
+Estymaty współczynników dla optymalnego podzbioru
+```{r bestSubsetCoef}
+coef(credits_class_bs, id = 2)
+```
+
+```{r regression}
+dir_logistic <- list()
+dir_logistic$fit <- glm(as.integer(credits$Loan.Given == 'True') ~ Current.Loan.Amount + Purpose,
+                   family = binomial, data = credits)
+summary(dir_logistic$fit)
+```
+```{r logisticConfusionMatrix}
+dir_logistic$probs <- predict(dir_logistic$fit, type = "response")
+dir_logistic$predicted <- ifelse(dir_logistic$probs > 0.5, 1, 0)
+dir_logistic$cm <- table(dir_logistic$predicted, credits$Loan.Given)
+dir_logistic$cm
+```
+
+Dla klasyfikacji wyselekcjonowalismy 2 atrybuty - Current Loan Amount oraz Purpose, patrzac na confusion matrix widzimy ze wyniki poprawily sie w stosunku do uzycia metody na wszystkich atrybutach.
+
+```{r lda}
+dir_lda <- list()
+dir_lda$fit <- lda(Loan.Given ~ Current.Loan.Amount + Purpose, data = credits)
+dir_lda$fit
+dir_lda$predicted <- predict(dir_lda$fit, credits_test)
+table(dir_lda$predicted$class, LoandGiven_test)
+```
+
+Za to dla LDA mamy pogorszenie wynikow.
+
+```{r qda}
+dir_qda <- list()
+dir_qda$fit <- qda(Loan.Given ~ Current.Loan.Amount + Purpose, data = credits)
+dir_qda$fit
+dir_qda$predicted <- predict(dir_qda$fit, credits_test)
+table(dir_qda$predicted$class, LoandGiven_test)
+```
+
+Tak samo pogorszyly sie wyniki dla QDA
+
+### Selekcja krokowa do przodu i wstecz
+
+Funkcja `regsubsets()` z odpowiednio ustawionym parametrem `method` może
+przeprowadzić selekcję krokową.
+```{r stepwise}
+credits_fwd <- regsubsets(Credit.Score ~ ., data = credits_linear, nvmax = 13, 
+                          method = "forward")
+credits_fwd_sum <- summary(credits_fwd)
+credits_fwd_sum
+```
+
+```{r cp}
+credits_fwd_sum$cp
+```
+
+Najlepszy podzbiór według kryterium BIC
+```{r bestBIC}
+bic_min <- which.min(credits_fwd_sum$bic)
+bic_min
+credits_fwd_sum$bic[bic_min]
+```
+
+Stosowny obrazek
+```{r bestBICPlot}
+plot(credits_fwd_sum$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(bic_min, credits_fwd_sum$bic[bic_min], col = "red", pch = 9)
+```
+
+Dostępny jest też specjalny rodzaj wykresu (`?plot.regsubsets`).
+```{r regsubsetsPlot}
+plot(credits_fwd, scale = "bic")
+```
+
+Estymaty współczynników dla optymalnego podzbioru
+```{r bestSubsetCoef}
+coef(credits_fwd, id = 4)
+```
+
+Ta metoda zwrocila dokladnie takie same atrybuty co metoda najlepszego podzbioru 
+
+### Backward
+```{r stepwise}
+credits_back <- regsubsets(Credit.Score ~ ., data = credits_linear, nvmax = 13, 
+                           method = "backward")
+credits_back_sum <- summary(credits_back)
+credits_back_sum
+```
+
+```{r cp}
+credits_back_sum$cp
+```
+
+Najlepszy podzbiór według kryterium BIC
+```{r bestBIC}
+bic_min <- which.min(credits_back_sum$bic)
+bic_min
+credits_back_sum$bic[bic_min]
+```
+
+Stosowny obrazek
+```{r bestBICPlot}
+plot(credits_back_sum$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(bic_min, credits_back_sum$bic[bic_min], col = "red", pch = 9)
+```
+
+Dostępny jest też specjalny rodzaj wykresu (`?plot.regsubsets`).
+```{r regsubsetsPlot}
+plot(credits_back, scale = "bic")
+```
+
+Estymaty współczynników dla optymalnego podzbioru
+```{r bestSubsetCoef}
+coef(credits_back, id = 4)
+```
+
+### Klasyfikacja
+
+```{r stepwise}
+credits_class_fwd <- regsubsets(as.integer(credits$Loan.Given == 'True') ~ ., data = credits_classification, nvmax = 13, 
+                          method = "forward")
+credits_class_fwd_sum <- summary(credits_class_fwd)
+credits_class_fwd_sum
+```
+
+```{r cp}
+credits_class_fwd_sum$cp
+```
+
+Najlepszy podzbiór według kryterium BIC
+```{r bestBIC}
+bic_min <- which.min(credits_class_fwd_sum$bic)
+bic_min
+credits_class_fwd_sum$bic[bic_min]
+```
+
+Stosowny obrazek
+```{r bestBICPlot}
+plot(credits_class_fwd_sum$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(bic_min, credits_class_fwd_sum$bic[bic_min], col = "red", pch = 9)
+```
+
+Dostępny jest też specjalny rodzaj wykresu (`?plot.regsubsets`).
+```{r regsubsetsPlot}
+plot(credits_class_fwd, scale = "bic")
+```
+
+Estymaty współczynników dla optymalnego podzbioru
+```{r bestSubsetCoef}
+coef(credits_class_fwd, id = 2)
+```
+
+### Backward
+
+```{r stepwise}
+credits_class_back <- regsubsets(as.integer(credits$Loan.Given == 'True') ~ ., data = credits_classification, nvmax = 13, 
+                           method = "backward")
+credits_class_back_sum <- summary(credits_class_back)
+credits_class_back_sum
+```
+
+```{r cp}
+credits_class_back_sum$cp
+```
+
+Najlepszy podzbiór według kryterium BIC
+```{r bestBIC}
+bic_min <- which.min(credits_class_back_sum$bic)
+bic_min
+credits_class_back_sum$bic[bic_min]
+```
+
+Stosowny obrazek
+```{r bestBICPlot}
+plot(credits_class_back_sum$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(bic_min, credits_class_back_sum$bic[bic_min], col = "red", pch = 9)
+```
+
+Dostępny jest też specjalny rodzaj wykresu (`?plot.regsubsets`).
+```{r regsubsetsPlot}
+plot(credits_class_back, scale = "bic")
+```
+
+Estymaty współczynników dla optymalnego podzbioru
+```{r bestSubsetCoef}
+coef(credits_class_back, id = 2)
+```
+
+Ponownie obie metody wskazaly te same atrybuty co metoda selekcji najlepszych podzbiorow.

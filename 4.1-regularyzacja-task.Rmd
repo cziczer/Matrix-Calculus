@@ -1,0 +1,68 @@
+---
+title: "Regularyzacja w modelach liniowych"
+date: "Semestr letni 2021/22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+library(ISLR)
+library(glmnet)
+credits <- read.csv(file = 'credits.csv')
+credits_linear <- credits[-15]
+```
+
+## Regularyzacja
+
+Funkcja `glmnet::glmnet()` ma składnię odmienną od `lm()` i jej podobnych. Dane
+wejściowe muszą być podane odmiennie. Trzeba w szczególności samodzielnie 
+skonstruować macierz $\mathbf{X}$
+```{r modelmatrix}
+X <- model.matrix(Credit.Score ~ ., data = credits_linear)[, -1]
+y <- credits_linear$Credit.Score
+```
+
+Argument `alpha` funkcji `glmnet()` decyduje o typie użytej regularyzacji:
+`0` oznacza regresję grzbietową, a `1` lasso.
+
+### Regresja grzbietowa
+
+
+Estymujemy testowy MSE
+```{r ridgemse}
+set.seed(1)
+n <- nrow(X)
+train <- sample(n, n / 2)
+test <- -train
+```
+
+Testowy MSE dla modelu zerowego (sam wyraz wolny)
+```{r ridgenullmse}
+pred_null <- mean(y[train])
+mean((pred_null - y[test])^2)
+```
+
+### Lasso
+
+Dopasowujemy lasso dla ustalonej siatki parametrów regularyzacji
+```{r lasso}
+fit_lasso <- glmnet(X[train,], y[train], alpha = 1)
+plot(fit_lasso, xvar = "lambda")
+```
+
+Wykonujemy walidację krzyżową i liczymy estymatę MSE
+```{r lasso.cv.mse}
+cv_out <- cv.glmnet(X[train,], y[train], alpha = 1)
+plot(cv_out)
+cv_out$lambda.min
+pred_lasso <- predict(fit_lasso, s = cv_out$lambda.min, newx = X[test,])
+mean((pred_lasso - y[test])^2)
+```
+
+Estymaty współczynników dla optymalnego $\lambda$
+```{r lasso.coefs.min}
+fit_lasso_full <- glmnet(X, y, alpha = 1)
+predict(fit_lasso_full, s = cv_out$lambda.min, type = "coefficients")[1:13,]
+```
+
+Wybieramy niezerowe wartosci

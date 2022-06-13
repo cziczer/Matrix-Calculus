@@ -1,0 +1,306 @@
+---
+title: "Drzewa decyzyjne i modele pochodne"
+date: "Semestr letni 2021/22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+library(ISLR)
+library(MASS)
+library(tree)
+library(randomForest)
+library(gbm)
+```
+
+### Drzewa klasyfikacyjne
+
+Poniższy kod wykorzystuje zbiór danych `Carseats` z pakietu `ISLR`. Będziemy
+klasyfikować obserwacje do dwóch klas: *wysoka sprzedaż* i *niska sprzedaż*.
+Uzupełniamy zbiór danych
+```{r CreditsDS}
+credits <- read.csv(file = 'credits.csv')
+credits$Loan.Given <- factor(ifelse(credits$Loan.Given == "True", "Yes", "No"))
+```
+
+Budujemy drzewo klasyfikacyjne do predykcji `Loan Gicen` na podstawie pozostałych
+zmiennych (poza `Credit Score`).
+
+```{r classTree}
+credit_given_tree <- tree(Loan.Given ~ . - Credit.Score, data = credits)
+summary(credit_given_tree)
+```
+
+Dla drzew klasyfikacyjnych
+$$
+  \text{deviance} = -2 n \sum_{m=1}^{|T|} \sum_{k=1}^K \hat{p}_{mk} \log \hat{p}_{mk}
+$$
+oraz
+$$
+  \text{residual mean deviance} = \frac{\text{deviance}}{n - |T_0|}.
+$$
+
+Przedstawienie graficzne dopasowanego modelu
+```{r plottree}
+plot(credit_given_tree)
+text(credit_given_tree, pretty = 0)
+```
+
+Więcej informacji podaje funkcja `print.tree()`
+```{r print_tree}
+credit_given_tree
+```
+
+[**Które predyktory są najbardziej istotne?**]
+
+Metodą zbioru walidacyjnego estymujemy błąd testowy dla drzewa klasyfikacyjnego
+w rozważanym problemie.
+```{r classtreeerror}
+set.seed(1)
+n <- nrow(credits)
+train <- sample(n, n / 2)
+test <- -train
+credit_given_tree <- tree(Loan.Given ~ . - Credit.Score, data = credits, subset = train)
+tree_class <- predict(credit_given_tree, newdata = credits[test,], type = "class")
+table(tree_class, credits$Loan.Given[test])
+mean(tree_class != credits$Loan.Given[test])
+```
+
+*Duże* drzewo $T_0$ dla zbioru uczącego
+```{r bigclasstree}
+plot(credit_given_tree)
+text(credit_given_tree, pretty = 0)
+```
+
+Do znalezienia optymalnego poddrzewa stosujemy przycinanie stosowane złożonością.
+Przy pomocy CV konstruujemy ciąg poddrzew wyznaczony przez malejącą złożoność.
+
+```{r classtreecv}
+set.seed(1)
+credit_given_tree_cv <- cv.tree(credit_given_tree, FUN = prune.misclass)
+credit_given_tree_cv
+plot(credit_given_tree_cv$size, credit_given_tree_cv$dev, type = "b")
+```
+
+Składowa `credit_given_tree_cv$dev` zawiera liczbę błędów CV. Przycinamy drzewo $T_0$
+do poddrzewa z najmniejszym poziomem błędów CV.
+
+```{r class.tree.prune}
+size_opt <- credit_given_tree_cv$size[which.min(credit_given_tree_cv$dev)]
+credit_given_tree_pruned <- prune.misclass(credit_given_tree, best = size_opt)
+plot(credit_given_tree_pruned)
+text(credit_given_tree_pruned, pretty = 0)
+```
+
+Testowy poziom błędów dla optymalnego poddrzewa.
+```{r class.pruned.error}
+pruned_class <- predict(credit_given_tree, newdata = credits[test,], 
+                        type = "class")
+table(pruned_class, credits$Loan.Given[test])
+mean(pruned_class != credits$Loan.Given[test])
+```
+
+### Drzewa regresyjne
+
+Konstruujemy drzewo decyzyjne dla problemu regresji `medv` względem pozostałych zmiennych.
+
+```{r regressiontree}
+credit_score_tree <- tree(Credit.Score ~ ., data = credits)
+summary(credit_score_tree)
+```
+
+*Deviance* oznacza tutaj RSS. Przedstawienie drzewa
+```{r}
+credit_score_tree
+plot(credit_score_tree)
+text(credit_score_tree)
+```
+
+Metodą zbioru walidacyjnego szacujemy błąd testowy.
+
+```{r}
+set.seed(1)
+n <- nrow(credits)
+train <- sample(n, n / 2)
+test <- -train
+credit_score_tree <- tree(Credit.Score ~ ., data = credits)
+credit_score_pred <- predict(credit_score_tree, newdata = credits[test,])
+mean((credit_score_pred - credits$Credit.Score[test])^2)
+```
+
+Wyznaczamy optymalne poddrzewo metodą przycinania sterowanego złożonością.
+
+```{r credit_score.cv}
+credit_score_cv <- cv.tree(credit_score_tree)
+plot(credit_score_cv$size, credit_score_cv$dev, type = "b")
+```
+
+Przycinanie drzewa $T_0$ do żądanego poziomu realizuje w tym przypadku funkcja
+`prune.tree()`.
+
+```{r medv.prune}
+credit_score_pruned <- prune.tree(credit_score_tree, best = 4)
+plot(credit_score_pruned)
+text(credit_score_pruned)
+```
+### Bagging
+
+```{r credit_score_bag}
+credit_score_bag <- randomForest(Credit.Score ~ ., data = credits, mtry = 13, importance = TRUE)
+credit_score_bag
+```
+
+Wykres błędu OOB względem liczby drzew
+```{r medvbagoob}
+plot(credit_score_bag, type = "l")
+```
+W przypadku regresji błąd MSE OOB dostępny jest w składowej `mse` obiektu
+klasy `randomForest`.
+W przypadku klasyfikacji wyniki analizy danych OOB dostępne są w składowych 
+`err.rate` (proporcja błędów) i `confusion` (tabela pomyłek).
+
+Wyznaczenie ważności predyktorów
+```{r credit_score_mportance}
+importance(credit_score_bag)
+```
+I stosowny obrazek
+```{r credit_score_bagimpplot}
+varImpPlot(credit_score_bag)
+```
+
+Oszacowanie błędu testowego dla poprzednio wyznaczonego zbioru walidacyjnego.
+```{r credit_scorebagvalid}
+set.seed(2)
+credit_score_bag <- randomForest(Credit.Score ~ ., data = credits, subset = train, mtry = 13,
+                         importance = TRUE)
+credit_score_pred_bag <- predict(credit_score_bag, newdata = credits[test,])
+mean((credit_score_pred_bag - credits$Credit.Score[test])^2)
+```
+Powyższe dla mniejszej liczby hodowanych drzew
+```{r credit_scorebagvalidsmall}
+set.seed(2)
+credit_score_bag_s <- randomForest(Credit.Score ~ ., data = credits, subset = train, mtry = 13,
+                         importance = TRUE, ntree = 25)
+credit_score_pred_bag_s <- predict(credit_score_bag_s, newdata = credits[test,])
+mean((credit_score_pred_bag_s - credits$Credit.Score[test])^2)
+```
+
+### Lasy losowe
+
+Domyślna wartość parametru `mtry` to $\sqrt{p}$ dla regresji i $p/3$ dla 
+klasyfikacji.
+
+Oszacowanie błędu testowego dla poprzednio wyznaczonego zbioru walidacyjnego.
+```{r credit_scorefvalid}
+set.seed(2)
+credit_score_rf <- randomForest(Credit.Score ~ ., data = credits, subset = train,
+                         importance = TRUE)
+credit_score_pred_rf <- predict(credit_score_rf, newdata = credits[test,])
+mean((credit_score_pred_rf - credits$Credit.Score[test])^2)
+```
+
+
+Powyższe dla ręcznie ustawionego parametru $m$ (czyli `mtry`).
+```{r medv.rf.valid.mtry}
+set.seed(2)
+credit_score_rf <- randomForest(Credit.Score ~ ., data = credits, subset = train, mtry = 6,
+                         importance = TRUE)
+credit_score_pred_rf <- predict(credit_score_rf, newdata = credits[test,])
+mean((credit_score_pred_rf - credits$Credit.Score[test])^2)
+```
+### Klasyfikacja 
+
+```{r credit_scorefvalid}
+set.seed(2)
+credit_given_rf <- randomForest(Loan.Given ~ ., data = credits, subset = train,
+                         importance = TRUE)
+credit_given_pred_rf <- predict(credit_given_rf, newdata = credits[test,])
+table(credit_given_pred_rf, credits$Loan.Given[test])
+mean(credit_given_pred_rf != credits$Loan.Given[test])
+```
+
+
+## Boosting
+
+Używamy algorytmów boostingu dla drzew decyzyjnych zaimplementowanych w 
+pakiecie `gbm`. Inną implementację --- wydajną i często pojawiającą się
+w zastosowaniach --- zawiera pakiet `xgboost`.
+
+Funkcją dopasowującą model jest `gbm()` z istotnymi parametrami:
+
+- `distribution`: `"gaussian"` dla regresji z RSS, `"bernoulli"` dla regresji typu
+logistycznego;
+
+- `n.trees`: liczba hodowanych drzew ($B$);
+
+- `interaction.depth`: głębokość interakcji ($d$);
+
+- `shrinkage`: parametr spowalniający uczenie ($\lambda$).
+
+```{r boost}
+credit_score_boost <- gbm(Credit.Score ~ ., data = credits, distribution = "gaussian",
+                  n.trees = 5000, interaction.depth = 4)
+credit_score_boost
+```
+
+Funkcja `summary.gbm()` wyznacza ważność predyktorów i (domyślnie) wykonuje
+odpowiedni wykres.
+```{r boostimp}
+summary(credit_score_boost)
+```
+
+
+Funkcja `plot.gbm()` wykonuje *wykresy częściowej zaleźności*.
+```{r medvboostpdp}
+plot(credit_score_boost, i.var = "Loan.Given")
+plot(credit_score_boost, i.var = "Annual.Income")
+```
+
+Oszacowanie błędu testowego dla poprzednio wyznaczonego zbioru walidacyjnego.
+```{r medvboostvalid}
+set.seed(2)
+credit_score_boost <- gbm(Credit.Score ~ ., data = credits[train,], distribution = "gaussian",
+                  interaction.depth = 4, n.trees = 5000)
+credit_score_pred_boost <- predict(credit_score_boost, newdata = credits[test,], n.trees = 5000)
+mean((credit_score_pred_boost - credits$Credit.Score[test])^2)
+```
+
+To samo dla $\lambda = 0.01$.
+```{r medvboostvalid2}
+set.seed(2)
+credit_score_boost <- gbm(Credit.Score ~ ., data = credits[train,], distribution = "gaussian",
+                  interaction.depth = 4, n.trees = 5000, shrinkage = 0.01)
+credit_score_pred_boost <- predict(credit_score_boost, newdata = credits[test,], n.trees = 5000)
+mean((credit_score_pred_boost - credits$Credit.Score[test])^2)
+```
+
+**Uwaga**. Obecna implementacja funkcji `gbm()` nie działa jeśli
+zmienna odpowiedzi jest czynnikiem o 2 poziomach. Należy taką zmienną
+przekształcić na zmienną numeryczną o wartościach w zbiorze $\{0, 1\}$
+lub na zmienną logiczną. Np. w powyższym ćwiczeniu zamiast zmiennej `High`
+można użyć `I(High == "Yes")`.
+
+### Klasyfikacja
+
+```{r boost}
+credit_given_boost <- gbm(I(Loan.Given == "Yes") ~ ., data = credits, distribution = "gaussian",
+                  n.trees = 5000, interaction.depth = 4)
+credit_given_boost
+```
+
+```{r boostimp}
+summary(credit_given_boost)
+```
+```{r medvboostpdp}
+plot(credit_given_boost, i.var = "Credit.Score")
+plot(credit_given_boost, i.var = "Monthly.Debt")
+```
+```{r medvboostvalid}
+set.seed(2)
+credit_given_boost <- gbm(I(Loan.Given == "Yes") ~ ., data = credits[train,], distribution = "gaussian",
+                  interaction.depth = 4, n.trees = 5000)
+credit_given_pred_boost <- predict(credit_given_boost, newdata = credits[test,], n.trees = 5000)
+table(credit_given_pred_boost, credits$Loan.Given[test])
+mean(credit_given_pred_boost != credits$Loan.Given[test])
+```
+

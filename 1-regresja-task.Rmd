@@ -1,0 +1,170 @@
+---
+title: "Regresja zadanie"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+## Prosta regresja liniowa
+
+```{r CreditsDataSet}
+credits <- read.csv(file = 'credits.csv')
+
+names(credits)
+dim(credits)
+head(credits)
+```
+
+Dopasowanie (uczenie) modelu liniowego wykonuje się przy pomocy funkcji
+`lm()`. Postać modelu określa się przy pomocy **formuły** (czyli obiektu
+klasy `formula`). Modelowi $$
+  Y = \beta_0 + \beta_1 X + \epsilon
+$$ odpowiada formuła `Y ~ X`. Poniższe instrukcje są równoważne i
+
+
+```{r simpleRegression}
+fit_simple <- lm(Credit.Score ~ Current.Loan.Amount, data = credits)
+```
+
+Wynikiem w każdym przypadku jest obiekt klasy `lm`, który jest też listą
+
+```{r lmClass}
+fit_simple
+class(fit_simple)
+is.list(fit_simple)
+names(fit_simple)
+```
+
+Składowe obiektu modelu liniowego są dostępne przez indeksowanie typu
+listowego lub przez odpowiednie funkcje/metody akcesorowe (co jest
+metodą zalecaną), np.
+
+```{r lmComponents}
+coef(fit_simple)
+```
+
+```{r lmSummary}
+summary(fit_simple)
+```
+
+Funkcja `summary()` zwraca listę (składowa `sigma` to RSE)
+
+```{r lmSummaryList}
+summaryList <- summary(fit_simple)
+summaryList$sigma
+summaryList$r.squared
+summaryList$fstatistic
+```
+
+Przedziały ufności dla współczynników regresji oblicza funkcja
+`confint()`
+
+```{r confInt}
+confint(fit_simple)
+```
+
+Funkcja `predict()` oblicza przedziały ufności dla predykcji --- zarówno
+dla przewidywania średniej wartości
+
+```{r predictConfidence}
+predict(fit_simple, data.frame(lstat = c(5, 10, 15)), interval = "confidence")
+```
+
+jak i dla przewidywania przyszłej wartości
+
+```{r predictPrediction}
+predict(fit_simple, data.frame(lstat = c(5, 10, 15)), interval = "prediction")
+```
+
+## Wykresy prostej regresji liniowej
+
+Prosta regresji na tle danych
+
+```{r lmPlot}
+plot(credits$Current.Loan.Amount, credits$Credit.Score)
+abline(fit_simple)
+```
+
+Wykresy diagnostyczne
+
+```{r lmDiagnosticPlots}
+# Można poprzedzić instrukcją: par(mfrow = c(2, 2))
+plot(fit_simple)
+```
+
+Alternatywnie
+
+```{r lmDiagPlots2}
+plot(predict(fit_simple), residuals(fit_simple))
+plot(predict(fit_simple), rstudent(fit_simple))
+```
+
+Identyfikacja obserwacji wpływowych (statystyka "dźwigni" [*leverage*])
+
+```{r hatvalues}
+plot(hatvalues(fit_simple))
+which.max(hatvalues(fit_simple))
+```
+
+## Regresja wielokrotna
+
+Model $$
+  Y = \beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_3 + \epsilon
+$$ reprezentowany jest przez formułę `Y ~ X1 + X2 + X3`, np.
+
+```{r multiRegression}
+fit_la <- lm(Credit.Score ~ Current.Loan.Amount + Annual.Income, data=credits)
+summary(fit_la)
+```
+
+regresję pewnej zmiennej względem wszystkich pozostałych
+
+```{r multiRegressionAll}
+fit_all <- lm(Credit.Score ~ ., data = credits)
+summary(fit_all)
+```
+
+Regresja z jedną zmienną usuniętą
+
+```{r multiNoPurpose}
+fit_no_purpose <- lm(Credit.Score ~ . - Purpose, data = credits)
+summary(fit_no_purpose)
+```
+
+Zbiór ufności dla dwóch współczynników
+
+```{r confSet}
+library(ellipse)
+plot(ellipse(fit_la, which = -1), type = "l")
+la_coefs <- coef(fit_la)
+points(la_coefs[2], la_coefs[3])
+```
+
+## Interakcje między zmiennymi
+
+Obecność składnika $X_1 \cdot X_2$ 
+
+```{r interaction}
+summary(lm(Credit.Score ~ Current.Loan.Amount * Purpose, data = credits))
+```
+
+## Nieliniowe transformacje predyktorów
+
+Logarytmiczna transformacja predyktora
+
+```{r log}
+summary(lm(Credit.Score ~ log(Annual.Income), data = credits))
+```
+
+```{r log}
+summary(lm(Credit.Score ~ log(Current.Loan.Amount), data = credits))
+```
+```{r log}
+summary(lm(Credit.Score ~ ., data = credits), data = credits)
+```
+Widzimy ze nwet po uzyciu logarytmow zaden z predykatow nie okazal sie byc istotnym w przewidywaniu Credi Scroe dla tego datasetu.
